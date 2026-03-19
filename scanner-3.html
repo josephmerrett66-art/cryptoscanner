@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FADE // Parabolic Scanner</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080a0e; --bg2: #0d1117; --bg3: #111820;
+    --border: #1e2a38; --border2: #2a3a4a;
+    --text: #c8d8e8; --muted: #4a6070; --muted2: #2e4050;
+    --accent: #00e5ff; --accent-dim: rgba(0,229,255,0.08);
+    --red: #ff3b5c; --red-dim: rgba(255,59,92,0.1);
+    --amber: #ffb83f; --amber-dim: rgba(255,184,63,0.08);
+    --green: #00d97e; --green-dim: rgba(0,217,126,0.08);
+    --purple: #b388ff; --purple-dim: rgba(179,136,255,0.08);
+    --mono: 'IBM Plex Mono', monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:var(--mono); font-size:13px; min-height:100vh; overflow-x:hidden; }
+  body::before { content:''; position:fixed; inset:0; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px); pointer-events:none; z-index:1000; }
+  body::after { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(0,229,255,0.015) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,0.015) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:999; }
+
+  .shell { max-width:980px; margin:0 auto; padding:28px 24px 80px; position:relative; z-index:1; }
+
+  .header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid var(--border); }
+  .brand-title { font-size:26px; font-weight:600; letter-spacing:0.18em; color:var(--accent); text-shadow:0 0 24px rgba(0,229,255,0.4); }
+  .brand-sub { font-size:11px; font-weight:300; color:var(--muted); letter-spacing:0.12em; text-transform:uppercase; margin-top:5px; }
+  .timestamp { font-size:11px; color:var(--muted); letter-spacing:0.06em; }
+
+  /* Tabs */
+  .tabs { display:flex; margin-bottom:22px; border-bottom:1px solid var(--border); }
+  .tab { padding:10px 22px; font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); cursor:pointer; border:none; background:transparent; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all 0.15s; }
+  .tab:hover { color:var(--text); }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .tab-badge { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:var(--red); color:#fff; font-size:9px; margin-left:6px; font-weight:600; }
+  .tab-content { display:none; }
+  .tab-content.active { display:block; }
+
+  /* Buttons */
+  .btn { display:inline-flex; align-items:center; gap:7px; padding:9px 16px; background:transparent; border:1px solid var(--accent); color:var(--accent); font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:0.12em; cursor:pointer; text-transform:uppercase; transition:all 0.15s; position:relative; overflow:hidden; }
+  .btn::before { content:''; position:absolute; inset:0; background:var(--accent-dim); opacity:0; transition:opacity 0.15s; }
+  .btn:hover::before { opacity:1; }
+  .btn:hover { box-shadow:0 0 14px rgba(0,229,255,0.18); }
+  .btn.loading { pointer-events:none; opacity:0.6; }
+  .btn.danger { border-color:var(--red); color:var(--red); }
+  .btn.danger::before { background:var(--red-dim); }
+  .btn.sm { padding:6px 12px; font-size:10px; }
+  .pulse { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); animation:pulse 1.2s ease-in-out infinite; }
+  .pulse.idle { background:var(--muted); box-shadow:none; animation:none; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
+
+  /* Controls */
+  .controls-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; gap:12px; flex-wrap:wrap; }
+  .controls { display:flex; align-items:center; gap:18px; padding:12px 15px; background:var(--bg2); border:1px solid var(--border); flex-wrap:wrap; flex:1; }
+  .cg { display:flex; align-items:center; gap:8px; }
+  .cl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; }
+  .ci { background:var(--bg3); border:1px solid var(--border2); color:var(--text); font-family:var(--mono); font-size:13px; padding:4px 8px; width:64px; outline:none; transition:border-color 0.2s; }
+  .ci:focus { border-color:var(--accent); }
+  .cu { font-size:11px; color:var(--muted); }
+  .vd { width:1px; height:20px; background:var(--border); }
+
+  /* Summary */
+  .summary { display:flex; margin-bottom:16px; border:1px solid var(--border); overflow:hidden; }
+  .sc { flex:1; padding:12px 15px; background:var(--bg2); border-right:1px solid var(--border); }
+  .sc:last-child { border-right:none; }
+  .sl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:4px; }
+  .sv { font-size:20px; font-weight:500; color:var(--accent); }
+  .sv.red{color:var(--red)} .sv.amber{color:var(--amber)} .sv.green{color:var(--green)}
+
+  /* Table */
+  .twrap { border:1px solid var(--border); overflow:hidden; }
+  .thead { display:grid; grid-template-columns:32px 1fr 88px 88px 88px 88px 108px 86px 98px; padding:8px 14px; background:var(--bg3); border-bottom:1px solid var(--border); gap:7px; }
+  .th { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; }
+  .th.r { text-align:right; }
+
+  .row { display:block; border-bottom:1px solid var(--border); background:var(--bg2); animation:rowIn 0.3s ease both; }
+  .row:last-child { border-bottom:none; }
+  @keyframes rowIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+  .row.t1 { border-left:3px solid var(--red); }
+  .row.t2 { border-left:3px solid var(--amber); }
+  .row.t3 { border-left:3px solid var(--muted2); }
+
+  .rmain { display:grid; grid-template-columns:32px 1fr 88px 88px 88px 88px 108px 86px 98px; padding:12px 14px 9px; gap:7px; align-items:center; cursor:pointer; }
+  .rmain:hover { background:rgba(255,255,255,0.02); }
+
+  .rnk { font-size:11px; color:var(--muted); text-align:center; }
+  .cc { display:flex; align-items:center; gap:9px; }
+  .ci2 { width:24px; height:24px; border-radius:50%; object-fit:cover; flex-shrink:0; }
+  .cip { width:24px; height:24px; border-radius:50%; background:var(--bg3); border:1px solid var(--border2); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:9px; color:var(--muted); }
+  .cn { font-weight:500; font-size:13px; }
+  .cs { font-size:10px; color:var(--muted); letter-spacing:0.06em; margin-top:1px; }
+  .cell { text-align:right; font-variant-numeric:tabular-nums; }
+  .chg { font-weight:500; font-size:14px; color:var(--red); }
+  .sbw { display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+  .sn { font-size:13px; font-weight:500; }
+  .sbb { width:100%; height:3px; background:var(--border); border-radius:2px; overflow:hidden; }
+  .sbf { height:100%; border-radius:2px; transition:width 0.6s ease; }
+  .sig { display:inline-block; padding:3px 7px; font-size:10px; font-weight:500; letter-spacing:0.07em; text-transform:uppercase; border-radius:2px; }
+  .se { background:var(--red-dim); color:var(--red); border:1px solid rgba(255,59,92,0.3); }
+  .ss { background:var(--amber-dim); color:var(--amber); border:1px solid rgba(255,184,63,0.3); }
+  .sm2{ background:var(--accent-dim); color:var(--accent); border:1px solid rgba(0,229,255,0.2); }
+
+  .lkbtn { display:inline-flex; align-items:center; gap:5px; padding:5px 9px; background:transparent; border:1px solid var(--muted2); color:var(--muted); font-family:var(--mono); font-size:10px; letter-spacing:0.07em; cursor:pointer; text-transform:uppercase; transition:all 0.15s; white-space:nowrap; }
+  .lkbtn:hover { border-color:var(--accent); color:var(--accent); }
+  .lkbtn.locked { border-color:var(--green); color:var(--green); background:var(--green-dim); pointer-events:none; }
+
+  /* Brief */
+  .btog { display:flex; align-items:center; justify-content:flex-end; gap:6px; font-size:10px; color:var(--muted); cursor:pointer; padding:0 14px 9px; letter-spacing:0.08em; text-transform:uppercase; user-select:none; transition:color 0.15s; }
+  .btog:hover { color:var(--accent); }
+  .chv { display:inline-block; width:8px; height:8px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg); transition:transform 0.2s; margin-bottom:2px; }
+  .chv.open { transform:rotate(-135deg); margin-bottom:-2px; }
+  .bpan { display:none; background:var(--bg); border-top:1px solid var(--border); padding:16px 14px 18px; }
+  .bpan.open { display:block; animation:bIn 0.2s ease both; }
+  @keyframes bIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+  .bgrid { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-bottom:14px; }
+  .bcard { background:var(--bg2); border:1px solid var(--border); padding:10px 12px; }
+  .bcl { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:4px; }
+  .bcv { font-size:14px; font-weight:500; margin-bottom:3px; }
+  .bcv.red{color:var(--red)} .bcv.amber{color:var(--amber)} .bcv.green{color:var(--green)} .bcv.acc{color:var(--accent)}
+  .bcs { font-size:10px; color:var(--muted); line-height:1.5; }
+  .bins { background:var(--bg2); border:1px solid var(--border); border-left:3px solid var(--accent); padding:12px 14px; margin-bottom:9px; }
+  .binsl { font-size:9px; color:var(--accent); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:8px; }
+  .bstp { display:flex; gap:9px; margin-bottom:6px; align-items:flex-start; }
+  .bstp:last-child { margin-bottom:0; }
+  .bstn { font-size:10px; color:var(--accent); min-width:14px; margin-top:1px; }
+  .bstt { font-size:12px; color:var(--text); line-height:1.6; }
+  .bstt span { color:var(--amber); font-weight:500; }
+  .bwarn { font-size:11px; color:var(--muted); line-height:1.6; border-top:1px solid var(--border); padding-top:9px; }
+  .bwarn strong { color:var(--red); font-weight:500; }
+
+  /* State / shimmer */
+  .stmsg { padding:48px 0; text-align:center; color:var(--muted); font-size:12px; letter-spacing:0.1em; background:var(--bg2); }
+  .stmsg .big { font-size:26px; font-weight:300; color:var(--muted2); margin-bottom:9px; letter-spacing:0.2em; }
+  .errmsg { padding:14px; background:var(--red-dim); border:1px solid rgba(255,59,92,0.3); color:var(--red); font-size:12px; margin-bottom:12px; display:none; }
+  .shrow { display:grid; grid-template-columns:32px 1fr 88px 88px 88px 88px 108px 86px 98px; padding:12px 14px; border-bottom:1px solid var(--border); gap:7px; align-items:center; background:var(--bg2); }
+  .shb { height:12px; border-radius:2px; background:linear-gradient(90deg,var(--border) 25%,var(--border2) 50%,var(--border) 75%); background-size:200% 100%; animation:sh 1.4s infinite; }
+  @keyframes sh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  /* Log */
+  .ltbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:10px; flex-wrap:wrap; }
+  .ltbarl { display:flex; align-items:center; gap:9px; }
+  .lhead { display:grid; grid-template-columns:1fr 88px 88px 88px 88px 88px 108px 98px; padding:8px 14px; background:var(--bg3); border-bottom:1px solid var(--border); gap:7px; }
+  .lrow { display:grid; grid-template-columns:1fr 88px 88px 88px 88px 88px 108px 98px; padding:12px 14px; border-bottom:1px solid var(--border); gap:7px; align-items:center; background:var(--bg2); }
+  .lrow:last-child { border-bottom:none; }
+  .lrow:hover { background:var(--bg3); }
+  .ob { display:inline-block; padding:3px 7px; font-size:10px; font-weight:500; letter-spacing:0.07em; border-radius:2px; white-space:nowrap; }
+  .ofw  { background:var(--green-dim); color:var(--green); border:1px solid rgba(0,217,126,0.3); }
+  .opw  { background:rgba(0,217,126,0.05); color:#6eddb0; border:1px solid rgba(0,217,126,0.2); }
+  .opl  { background:var(--amber-dim); color:var(--amber); border:1px solid rgba(255,184,63,0.25); }
+  .ofl  { background:var(--red-dim); color:var(--red); border:1px solid rgba(255,59,92,0.3); }
+  .one  { background:var(--purple-dim); color:var(--purple); border:1px solid rgba(179,136,255,0.25); }
+  .oex  { background:rgba(74,96,112,0.15); color:var(--muted); border:1px solid var(--border2); }
+  .oop  { background:var(--accent-dim); color:var(--accent); border:1px solid rgba(0,229,255,0.2); }
+  .pp { color:var(--green); } .pn { color:var(--red); } .pz { color:var(--muted); }
+
+  /* Stats */
+  .sgrid { display:grid; grid-template-columns:repeat(4,1fr); gap:11px; margin-bottom:22px; }
+  .scard { background:var(--bg2); border:1px solid var(--border); padding:15px 16px; }
+  .sclabel { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:5px; }
+  .scval { font-size:22px; font-weight:500; color:var(--accent); }
+  .scval.red{color:var(--red)} .scval.green{color:var(--green)} .scval.amber{color:var(--amber)}
+  .scsub { font-size:11px; color:var(--muted); margin-top:3px; }
+  .ssec { margin-bottom:22px; }
+  .ssect { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:11px; padding-bottom:7px; border-bottom:1px solid var(--border); }
+  .bdgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:11px; }
+  .bdcard { background:var(--bg2); border:1px solid var(--border); padding:13px 15px; }
+  .bdtitle { font-size:11px; color:var(--text); margin-bottom:9px; font-weight:500; }
+  .bdrow { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:12px; }
+  .bdrow:last-child { margin-bottom:0; }
+  .bdk { color:var(--muted); }
+  .bdv { color:var(--text); font-weight:500; }
+  .bdv.green{color:var(--green)} .bdv.red{color:var(--red)} .bdv.amber{color:var(--amber)}
+  .barrow { display:flex; align-items:center; gap:9px; margin-bottom:7px; font-size:11px; }
+  .barlbl { width:96px; color:var(--muted); text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bartr { flex:1; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+  .barf { height:100%; border-radius:3px; transition:width 0.6s ease; }
+  .barval { width:32px; color:var(--text); text-align:right; }
+  .estats { padding:56px 0; text-align:center; color:var(--muted); font-size:12px; }
+  .estats .big { font-size:26px; color:var(--muted2); margin-bottom:9px; }
+
+  .footer { margin-top:26px; font-size:10px; color:var(--muted); display:flex; justify-content:space-between; letter-spacing:0.06em; }
+
+  .chkst { font-size:11px; color:var(--muted); }
+
+  @media(max-width:720px) {
+    .thead,.rmain,.shrow { grid-template-columns:26px 1fr 68px 68px 88px 86px; }
+    .lhead,.lrow { grid-template-columns:1fr 78px 78px 88px 88px; }
+    .sgrid { grid-template-columns:repeat(2,1fr); }
+    .bdgrid { grid-template-columns:1fr; }
+    .bgrid { grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="header">
+    <div>
+      <div class="brand-title">FADE</div>
+      <div class="brand-sub">Parabolic Short Scanner &nbsp;·&nbsp; Crypto</div>
+    </div>
+    <div style="text-align:right">
+      <div class="timestamp" id="ts">—</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('scanner',this)">Scanner</button>
+    <button class="tab" onclick="switchTab('log',this)">Trade Log <span class="tab-badge" id="openBadge" style="display:none">0</span></button>
+    <button class="tab" onclick="switchTab('stats',this)">Stats</button>
+  </div>
+
+  <!-- SCANNER -->
+  <div class="tab-content active" id="tab-scanner">
+    <div class="controls-bar">
+      <div class="controls">
+        <div class="cg"><span class="cl">Min gain</span><input type="number" class="ci" id="minGain" value="30" min="10"><span class="cu">%</span></div>
+        <div class="vd"></div>
+        <div class="cg"><span class="cl">Vol spike</span><input type="number" class="ci" id="minVol" value="200" min="50"><span class="cu">%</span></div>
+        <div class="vd"></div>
+        <div class="cg"><span class="cl">Max mcap</span><input type="number" class="ci" id="maxMcap" value="500" min="10"><span class="cu">$M</span></div>
+        <div class="vd"></div>
+        <div class="cg"><span class="cl">Top</span><input type="number" class="ci" id="topN" value="10" min="3" max="30"></div>
+      </div>
+      <button class="btn" id="scanBtn" onclick="runScan()">
+        <div class="pulse idle" id="pulseEl"></div>
+        <span id="btnLabel">RUN SCAN</span>
+      </button>
+    </div>
+
+    <div class="summary">
+      <div class="sc"><div class="sl">Scanned</div><div class="sv" id="statScanned">—</div></div>
+      <div class="sc"><div class="sl">Passed</div><div class="sv amber" id="statPassed">—</div></div>
+      <div class="sc"><div class="sl">Extreme</div><div class="sv red" id="statExtreme">—</div></div>
+      <div class="sc"><div class="sl">Avg gain</div><div class="sv" id="statAvgGain">—</div></div>
+    </div>
+
+    <div class="errmsg" id="errorMsg"></div>
+
+    <div class="twrap">
+      <div class="thead">
+        <div class="th">#</div><div class="th">Coin</div>
+        <div class="th r">Price</div><div class="th r">24h</div>
+        <div class="th r">MCap</div><div class="th r">Vol×</div>
+        <div class="th r">Signal</div><div class="th r">Score</div>
+        <div class="th r">Track</div>
+      </div>
+      <div id="tableBody"><div class="stmsg"><div class="big">◈</div>Press RUN SCAN to fetch live data</div></div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="tab-content" id="tab-log">
+    <div class="ltbar">
+      <div class="ltbarl">
+        <button class="btn sm" onclick="checkResults()">↻ Check Results</button>
+        <span class="chkst" id="checkStatus"></span>
+      </div>
+      <button class="btn sm danger" onclick="clearLog()">Clear All</button>
+    </div>
+    <div class="twrap">
+      <div class="lhead">
+        <div class="th">Coin</div>
+        <div class="th r">Entry</div><div class="th r">Stop</div>
+        <div class="th r">Target</div><div class="th r">Exit</div>
+        <div class="th r">P&amp;L</div>
+        <div class="th r">Outcome</div><div class="th r">Locked</div>
+      </div>
+      <div id="logBody"></div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="tab-content" id="tab-stats">
+    <div id="statsBody"></div>
+  </div>
+
+  <div class="footer">
+    <span>Data: CoinGecko public API &nbsp;·&nbsp; Auto-close: 16:00 local</span>
+    <span id="footerTs"></span>
+  </div>
+</div>
+
+<script>
+const CG = 'https://api.coingecko.com/api/v3';
+const CLOSE_H = 16;
+
+// Storage
+function loadLog(){ try{ return JSON.parse(localStorage.getItem('fade_log')||'[]'); }catch(e){ return []; } }
+function saveLog(l){ localStorage.setItem('fade_log', JSON.stringify(l)); }
+
+// Tabs
+function switchTab(name, el) {
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  el.classList.add('active');
+  if(name==='log') renderLog();
+  if(name==='stats') renderStats();
+}
+
+// Formatting
+function fmtP(p) {
+  if(!p && p!==0) return '—';
+  if(p<0.0001) return '$'+p.toExponential(2);
+  if(p<0.01) return '$'+p.toFixed(6);
+  if(p<1) return '$'+p.toFixed(4);
+  return '$'+p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtM(m){ if(!m) return '—'; return m>=1e9?'$'+(m/1e9).toFixed(1)+'B':'$'+(m/1e6).toFixed(0)+'M'; }
+function fmtPct(p){ if(p===null||p===undefined) return '—'; return (p>=0?'+':'')+p.toFixed(1)+'%'; }
+function fmtDt(ts){ return new Date(ts).toLocaleDateString('en-AU',{day:'2-digit',month:'short'})+' '+new Date(ts).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}); }
+
+// Scoring
+function scoreCoins(arr) {
+  const mg=Math.max(...arr.map(c=>c.price_change_percentage_24h));
+  const mv=Math.max(...arr.map(c=>c.volRatio));
+  const mm=Math.max(...arr.map(c=>c.market_cap));
+  return arr.map(c=>({
+    ...c,
+    score:Math.round((c.price_change_percentage_24h/mg)*45+(c.volRatio/mv)*35+((1-c.market_cap/mm))*20)
+  })).sort((a,b)=>b.score-a.score);
+}
+function sigLabel(score,gain){
+  if(score>=75||gain>=100) return {label:'EXTREME',cls:'se'};
+  if(score>=50||gain>=50)  return {label:'STRONG', cls:'ss'};
+  return                          {label:'MODERATE',cls:'sm2'};
+}
+function sColor(s){ return s>=75?'var(--red)':s>=50?'var(--amber)':'var(--accent)'; }
+function tierCls(i){ return i===0?'t1':i<=2?'t2':'t3'; }
+
+// Trade brief
+function brief(coin) {
+  const p=coin.current_price, g=coin.price_change_percentage_24h, s=coin.score, v=coin.volRatio, m=coin.market_cap;
+  const ep = p*(g>=100?.92:g>=60?.94:.96);
+  const et = g>=100?'first 5-min candle closing red after a new high':g>=60?'rejection candle near current high — wait for close below open':'two consecutive red candles on declining volume';
+  const sp = p*(m<10e6?1.10:m<50e6?1.07:1.05);
+  const spct = ((sp-p)/p*100).toFixed(1);
+  const rp = g>=100?.50:g>=60?.42:.35;
+  const open = p/(1+g/100);
+  const tp = ep-(ep-open)*rp;
+  const tpct = ((ep-tp)/ep*100).toFixed(1);
+  let rl,rc,rr;
+  if(m<5e6){rl='VERY HIGH';rc='red';rr='Micro-cap — borrow may be unavailable, spreads wide';}
+  else if(m<30e6){rl='HIGH';rc='red';rr='Small-cap — short squeeze risk if float is thin';}
+  else if(m<150e6){rl='MODERATE';rc='amber';rr='Mid-cap — reasonable liquidity but still volatile';}
+  else{rl='LOWER';rc='green';rr='Larger cap — better liquidity but move may have legs';}
+  const sn = s>=75?'High-conviction — scale in rather than full position at once':s>=50?'Moderate conviction — consider half-size, add on confirmation':'Lower conviction — small size only, treat as speculative';
+  const pn = v>=5?'Volume extremely elevated — wait for clear exhaustion before entering.':v>=3?'Significant spike — let the initial wave exhaust first.':'Moderate spike — be patient with your entry.';
+  return {ep,et,sp,spct,tp,tpct,rl,rc,rr,sn,pn,rp};
+}
+
+// Grade outcome
+function grade(trade, curP) {
+  const {ep,sp,tp,lockedAt}=trade;
+  const now=new Date();
+  const ct=new Date(lockedAt);
+  ct.setHours(CLOSE_H,0,0,0);
+  if(new Date(lockedAt).getHours()>=CLOSE_H) ct.setDate(ct.getDate()+1);
+  const past=now>=ct;
+
+  // Never entered: price still above entry
+  if(curP>ep*1.005) return {outcome:'never-entered',label:'Never Entered',cls:'one',exitP:null,pnl:null};
+
+  const pnl=((ep-curP)/ep)*100;
+
+  // Stopped out (price went up past stop)
+  if(curP>=sp){ const sl=-((sp-ep)/ep*100); return {outcome:'full-loss',label:'Stopped Out',cls:'ofl',exitP:sp,pnl:sl}; }
+  // Hit target
+  if(curP<=tp){ return {outcome:'full-win',label:'Full Win ✓',cls:'ofw',exitP:tp,pnl:((ep-tp)/ep)*100}; }
+
+  if(!past) return {outcome:'open',label:'Open',cls:'oop',exitP:curP,pnl};
+
+  // Past close — grade partial
+  if(pnl>0) return {outcome:'partial-win',label:'Partial Win',cls:'opw',exitP:curP,pnl};
+  if(pnl<0) return {outcome:'partial-loss',label:'Partial Loss',cls:'opl',exitP:curP,pnl};
+  return {outcome:'expired',label:'Expired',cls:'oex',exitP:curP,pnl:0};
+}
+
+// Lock coin
+function lockCoin(coinId) {
+  const log=loadLog();
+  if(log.find(t=>t.coinId===coinId&&(t.outcome==='open'||t.outcome==='never-entered'))) return;
+  const el=document.querySelector(`[data-cid="${coinId}"]`);
+  if(!el) return;
+  const coin=JSON.parse(el.dataset.coin);
+  const b=brief(coin);
+  const trade={
+    id:Date.now(), coinId:coin.id, name:coin.name, symbol:coin.symbol.toUpperCase(),
+    image:coin.image||'', lockedAt:Date.now(), lockPrice:coin.current_price,
+    ep:b.ep, sp:b.sp, tp:b.tp, score:coin.score,
+    gain24h:coin.price_change_percentage_24h, volRatio:coin.volRatio, mcap:coin.market_cap,
+    outcome:'open', exitP:null, pnl:null,
+    // store for log display
+    entryPrice:b.ep, stopPrice:b.sp, targetPrice:b.tp
+  };
+  log.push(trade); saveLog(log);
+  const btn=document.getElementById('lk-'+coinId);
+  if(btn){btn.className='lkbtn locked';btn.textContent='✓ Locked';btn.onclick=null;}
+  updateBadge();
+}
+
+function updateBadge() {
+  const n=loadLog().filter(t=>t.outcome==='open').length;
+  const b=document.getElementById('openBadge');
+  b.style.display=n>0?'inline-flex':'none';
+  b.textContent=n;
+}
+
+// Check results
+async function checkResults() {
+  const log=loadLog();
+  const toChk=log.filter(t=>t.outcome==='open'||t.outcome==='never-entered');
+  const st=document.getElementById('checkStatus');
+  if(!toChk.length){st.textContent='No open trades.';return;}
+  st.textContent='Fetching prices...';
+  const ids=[...new Set(toChk.map(t=>t.coinId))].join(',');
+  try {
+    const res=await fetch(`${CG}/simple/price?ids=${ids}&vs_currencies=usd`);
+    const prices=await res.json();
+    toChk.forEach(trade=>{
+      const cp=prices[trade.coinId]?.usd;
+      if(!cp) return;
+      // rebuild trade object with ep/sp/tp keys for grade()
+      const tr={...trade, ep:trade.ep||trade.entryPrice, sp:trade.sp||trade.stopPrice, tp:trade.tp||trade.targetPrice};
+      const g=grade(tr,cp);
+      const idx=log.findIndex(t=>t.id===trade.id);
+      if(idx>=0){ log[idx].outcome=g.outcome; log[idx].exitP=g.exitP??cp; log[idx].pnl=g.pnl; }
+    });
+    saveLog(log); renderLog(); updateBadge();
+    st.textContent=`Updated ${toChk.length} trade${toChk.length>1?'s':''} · ${new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'})}`;
+  } catch(e){ st.textContent='⚠ Fetch failed — try again'; }
+}
+
+// Render log
+const OLABELS={'full-win':'Full Win ✓','partial-win':'Partial Win','partial-loss':'Partial Loss','full-loss':'Stopped Out','never-entered':'Never Entered','expired':'Expired','open':'Open'};
+const OCLS={'full-win':'ofw','partial-win':'opw','partial-loss':'opl','full-loss':'ofl','never-entered':'one','expired':'oex','open':'oop'};
+
+function renderLog() {
+  const log=loadLog().slice().reverse();
+  const body=document.getElementById('logBody');
+  if(!log.length){body.innerHTML='<div class="stmsg"><div class="big">◫</div>No trades locked yet</div>';return;}
+  body.innerHTML=log.map(t=>{
+    const pc=t.pnl===null?'pz':t.pnl>0?'pp':'pn';
+    const ep=t.ep||t.entryPrice, sp=t.sp||t.stopPrice, tp=t.tp||t.targetPrice;
+    return `<div class="lrow">
+      <div style="display:flex;align-items:center;gap:7px">
+        ${t.image?`<img src="${t.image}" style="width:20px;height:20px;border-radius:50%">`:''} 
+        <div><div style="font-weight:500">${t.name}</div><div style="font-size:10px;color:var(--muted)">${t.symbol}</div></div>
+      </div>
+      <div class="cell" style="color:var(--accent)">${fmtP(ep)}</div>
+      <div class="cell" style="color:var(--red)">${fmtP(sp)}</div>
+      <div class="cell" style="color:var(--green)">${fmtP(tp)}</div>
+      <div class="cell">${t.exitP?fmtP(t.exitP):'—'}</div>
+      <div class="cell ${pc}">${t.pnl!==null?fmtPct(t.pnl):'—'}</div>
+      <div class="cell"><span class="ob ${OCLS[t.outcome]||'oop'}">${OLABELS[t.outcome]||t.outcome}</span></div>
+      <div class="cell" style="font-size:10px;color:var(--muted)">${fmtDt(t.lockedAt)}</div>
+    </div>`;
+  }).join('');
+}
+
+function clearLog(){ if(!confirm('Clear all trade history?')) return; saveLog([]); renderLog(); updateBadge(); }
+
+// Render stats
+function renderStats() {
+  const log=loadLog().filter(t=>t.outcome!=='open');
+  const body=document.getElementById('statsBody');
+  if(log.length<3){body.innerHTML='<div class="estats"><div class="big">∑</div>Lock and grade at least 3 trades to see stats</div>';return;}
+
+  const entered=log.filter(t=>t.outcome!=='never-entered');
+  const ne=log.filter(t=>t.outcome==='never-entered').length;
+  const wins=entered.filter(t=>t.outcome==='full-win'||t.outcome==='partial-win');
+  const losses=entered.filter(t=>t.outcome==='full-loss'||t.outcome==='partial-loss');
+  const wr=entered.length?(wins.length/entered.length*100).toFixed(0):0;
+  const aw=wins.length?(wins.reduce((s,t)=>s+t.pnl,0)/wins.length).toFixed(1):null;
+  const al=losses.length?(losses.reduce((s,t)=>s+Math.abs(t.pnl),0)/losses.length).toFixed(1):null;
+  const exp=(aw&&al&&entered.length)?((wins.length/entered.length)*parseFloat(aw)-(losses.length/entered.length)*parseFloat(al)).toFixed(1):null;
+  const nePct=log.length?(ne/log.length*100).toFixed(0):0;
+
+  const byTier=(mn,mx)=>{const t=entered.filter(x=>x.score>=mn&&x.score<mx);const w=t.filter(x=>x.outcome==='full-win'||x.outcome==='partial-win');return t.length?{n:t.length,wr:(w.length/t.length*100).toFixed(0)}:null;};
+
+  const oc=[
+    {o:'full-win',lbl:'Full Win',col:'var(--green)'},
+    {o:'partial-win',lbl:'Partial Win',col:'#6eddb0'},
+    {o:'partial-loss',lbl:'Partial Loss',col:'var(--amber)'},
+    {o:'full-loss',lbl:'Stopped Out',col:'var(--red)'},
+    {o:'never-entered',lbl:'Never Entered',col:'var(--purple)'},
+    {o:'expired',lbl:'Expired',col:'var(--muted)'},
+  ].map(x=>({...x,n:log.filter(t=>t.outcome===x.o).length})).filter(x=>x.n>0);
+  const maxN=Math.max(...oc.map(x=>x.n));
+
+  const tips=[];
+  if(parseFloat(nePct)>40) tips.push('Over 40% of signals never reached entry — the coins kept pumping. Consider tightening min gain or being more selective about which signals you lock.');
+  if(parseFloat(wr)<40&&entered.length>=5) tips.push('Win rate under 40%. Try raising the minimum vol spike threshold — higher volume spikes suggest more exhausted buying pressure and better fade setups.');
+  if(parseFloat(wr)>=60&&entered.length>=5) tips.push('Win rate is strong. You may be able to increase size on high-score setups (75+) and filter out lower-score signals entirely.');
+  const ht=entered.filter(x=>x.score>=75); const hw=ht.filter(x=>x.outcome==='full-win'||x.outcome==='partial-win');
+  if(ht.length>=3&&hw.length/ht.length>0.65) tips.push(`High-score signals (75+) are hitting ${(hw.length/ht.length*100).toFixed(0)}% win rate — this is your strongest edge. Prioritise these.`);
+  const lt=entered.filter(x=>x.score<50); const lw=lt.filter(x=>x.outcome==='full-win'||x.outcome==='partial-win');
+  if(lt.length>=3&&lw.length/lt.length<0.35) tips.push(`Low-score signals (<50) are only winning ${(lw.length/lt.length*100).toFixed(0)}% — consider filtering these out by raising your minimum score.`);
+  if(!tips.length) tips.push('Keep collecting data — meaningful suggestions appear after 10+ completed trades.');
+
+  const t1=byTier(75,101), t2=byTier(50,75), t3=byTier(0,50);
+
+  body.innerHTML=`
+    <div class="sgrid">
+      <div class="scard"><div class="sclabel">Win rate (entered)</div><div class="scval ${wr>=50?'green':'red'}">${wr}%</div><div class="scsub">${wins.length}W / ${losses.length}L of ${entered.length} entered</div></div>
+      <div class="scard"><div class="sclabel">Expectancy / trade</div><div class="scval ${exp>=0?'green':'red'}">${exp!==null?fmtPct(parseFloat(exp)):'—'}</div><div class="scsub">Avg win ${aw?'+'+aw+'%':'—'} · Avg loss ${al?'-'+al+'%':'—'}</div></div>
+      <div class="scard"><div class="sclabel">Never entered</div><div class="scval amber">${nePct}%</div><div class="scsub">${ne} of ${log.length} — price kept pumping</div></div>
+      <div class="scard"><div class="sclabel">Total tracked</div><div class="scval">${log.length}</div><div class="scsub">${entered.length} entered · ${ne} never entered</div></div>
+    </div>
+
+    <div class="ssec">
+      <div class="ssect">Outcome distribution</div>
+      ${oc.map(x=>`<div class="barrow"><div class="barlbl">${x.lbl}</div><div class="bartr"><div class="barf" style="width:${Math.round(x.n/maxN*100)}%;background:${x.col}"></div></div><div class="barval">${x.n}</div></div>`).join('')}
+    </div>
+
+    <div class="ssec">
+      <div class="ssect">Edge breakdown</div>
+      <div class="bdgrid">
+        <div class="bdcard">
+          <div class="bdtitle">By score tier</div>
+          ${t1?`<div class="bdrow"><span class="bdk">High (75+)</span><span class="bdv ${t1.wr>=50?'green':'red'}">${t1.wr}% (${t1.n})</span></div>`:''}
+          ${t2?`<div class="bdrow"><span class="bdk">Mid (50–74)</span><span class="bdv ${t2.wr>=50?'green':'red'}">${t2.wr}% (${t2.n})</span></div>`:''}
+          ${t3?`<div class="bdrow"><span class="bdk">Low (&lt;50)</span><span class="bdv ${t3.wr>=50?'green':'red'}">${t3.wr}% (${t3.n})</span></div>`:''}
+          ${!t1&&!t2&&!t3?'<div style="font-size:11px;color:var(--muted)">Not enough data yet</div>':''}
+        </div>
+        <div class="bdcard">
+          <div class="bdtitle">Win breakdown</div>
+          <div class="bdrow"><span class="bdk">Full win (hit TP)</span><span class="bdv green">${log.filter(t=>t.outcome==='full-win').length}</span></div>
+          <div class="bdrow"><span class="bdk">Partial win</span><span class="bdv green">${log.filter(t=>t.outcome==='partial-win').length}</span></div>
+          <div class="bdrow"><span class="bdk">Partial loss</span><span class="bdv amber">${log.filter(t=>t.outcome==='partial-loss').length}</span></div>
+          <div class="bdrow"><span class="bdk">Stopped out</span><span class="bdv red">${log.filter(t=>t.outcome==='full-loss').length}</span></div>
+        </div>
+        <div class="bdcard">
+          <div class="bdtitle">Filter suggestions</div>
+          ${tips.map(t=>`<div style="font-size:11px;color:var(--text);line-height:1.7;margin-bottom:8px;padding-left:10px;border-left:2px solid var(--accent);">${t}</div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+// Shimmer
+function shimmer(){
+  document.getElementById('tableBody').innerHTML=Array.from({length:6}).map(()=>`
+    <div class="shrow">
+      <div class="shb" style="width:16px;height:10px"></div>
+      <div style="display:flex;gap:9px;align-items:center">
+        <div class="shb" style="width:24px;height:24px;border-radius:50%"></div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div class="shb" style="width:78px"></div><div class="shb" style="width:38px;height:10px"></div>
+        </div>
+      </div>
+      <div class="shb" style="width:66px;margin-left:auto"></div>
+      <div class="shb" style="width:56px;margin-left:auto"></div>
+      <div class="shb" style="width:56px;margin-left:auto"></div>
+      <div class="shb" style="width:44px;margin-left:auto"></div>
+      <div class="shb" style="width:72px;margin-left:auto;height:20px"></div>
+      <div class="shb" style="width:44px;margin-left:auto"></div>
+      <div class="shb" style="width:66px;margin-left:auto;height:22px"></div>
+    </div>`).join('');
+}
+
+function toggleBrief(p,c){
+  const pe=document.getElementById(p), ce=document.getElementById(c);
+  if(pe){pe.classList.toggle('open');ce.classList.toggle('open');}
+}
+
+// Main scan
+async function runScan() {
+  const btn=document.getElementById('scanBtn'), pl=document.getElementById('pulseEl'), lb=document.getElementById('btnLabel'), err=document.getElementById('errorMsg');
+  btn.classList.add('loading'); pl.classList.remove('idle'); lb.textContent='SCANNING...'; err.style.display='none'; shimmer();
+
+  const minG=parseFloat(document.getElementById('minGain').value)||30;
+  const maxM=(parseFloat(document.getElementById('maxMcap').value)||500)*1e6;
+  const topN=parseInt(document.getElementById('topN').value)||10;
+
+  try {
+    const pages=await Promise.all([1,2,3].map(p=>
+      fetch(`${CG}/coins/markets?vs_currency=usd&order=volume_desc&per_page=100&page=${p}&price_change_percentage=24h`)
+        .then(r=>{if(!r.ok) throw new Error(`API ${r.status}`); return r.json();})
+    ));
+    const all=pages.flat();
+    document.getElementById('statScanned').textContent=all.length;
+
+    const med=(()=>{
+      const rs=all.map(c=>c.total_volume/(c.market_cap||1)).sort((a,b)=>a-b);
+      return rs[Math.floor(rs.length/2)];
+    })();
+
+    const filt=all.filter(c=>c.price_change_percentage_24h>=minG&&c.market_cap&&c.market_cap<=maxM)
+      .map(c=>({...c,volRatio:(c.total_volume/(c.market_cap||1))/med}));
+
+    const minV=parseFloat(document.getElementById('minVol').value)/100||2;
+    const vfilt=filt.filter(c=>c.volRatio>=minV);
+    document.getElementById('statPassed').textContent=vfilt.length;
+
+    if(!vfilt.length){
+      document.getElementById('statExtreme').textContent='0';
+      document.getElementById('statAvgGain').textContent='—';
+      document.getElementById('tableBody').innerHTML='<div class="stmsg"><div class="big">∅</div>No coins match filters</div>';
+      return;
+    }
+
+    const scored=scoreCoins(vfilt);
+    const top=scored.slice(0,topN);
+    document.getElementById('statExtreme').textContent=top.filter(c=>c.score>=75||c.price_change_percentage_24h>=100).length;
+    document.getElementById('statAvgGain').textContent='+'+(top.reduce((s,c)=>s+c.price_change_percentage_24h,0)/top.length).toFixed(1)+'%';
+
+    const now=new Date();
+    const ts=now.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · '+now.toLocaleDateString('en-AU');
+    document.getElementById('ts').textContent=ts;
+    document.getElementById('footerTs').textContent='Last scan: '+ts;
+
+    const maxS=Math.max(...top.map(c=>c.score));
+    const locked=new Set(loadLog().filter(t=>t.outcome==='open'||t.outcome==='never-entered').map(t=>t.coinId));
+
+    document.getElementById('tableBody').innerHTML=top.map((coin,i)=>{
+      const g=coin.price_change_percentage_24h, sl=sigLabel(coin.score,g);
+      const bp=Math.round((coin.score/maxS)*100);
+      const img=coin.image?`<img class="ci2" src="${coin.image}" alt="" onerror="this.outerHTML='<div class=cip>${coin.symbol.charAt(0).toUpperCase()}</div>'">`: `<div class="cip">${coin.symbol.charAt(0).toUpperCase()}</div>`;
+      const b=brief(coin), pid=`bp-${i}`, cid=`cv-${i}`;
+      const isLk=locked.has(coin.id);
+      const lkHtml=isLk?`<button class="lkbtn locked" id="lk-${coin.id}">✓ Locked</button>`:`<button class="lkbtn" id="lk-${coin.id}" onclick="lockCoin('${coin.id}')">+ Lock In</button>`;
+      const safeData=JSON.stringify(coin).replace(/'/g,"&#39;");
+
+      return `<div class="row ${tierCls(i)}" style="animation-delay:${i*35}ms">
+        <div class="rmain" onclick="toggleBrief('${pid}','${cid}')" data-cid="${coin.id}" data-coin='${safeData}'>
+          <div class="rnk">${i+1}</div>
+          <div class="cc">${img}<div><div class="cn">${coin.name}</div><div class="cs">${coin.symbol.toUpperCase()}</div></div></div>
+          <div class="cell" style="color:var(--text)">${fmtP(coin.current_price)}</div>
+          <div class="cell chg">+${g.toFixed(1)}%</div>
+          <div class="cell" style="color:var(--muted);font-size:12px">${fmtM(coin.market_cap)}</div>
+          <div class="cell" style="color:var(--muted);font-size:12px">${coin.volRatio.toFixed(1)}×</div>
+          <div class="cell"><span class="sig ${sl.cls}">${sl.label}</span></div>
+          <div class="cell sbw"><span class="sn" style="color:${sColor(coin.score)}">${coin.score}</span><div class="sbb"><div class="sbf" style="width:${bp}%;background:${sColor(coin.score)}"></div></div></div>
+          <div class="cell">${lkHtml}</div>
+        </div>
+        <div class="btog" onclick="toggleBrief('${pid}','${cid}')">TRADE BRIEF <span class="chv" id="${cid}"></span></div>
+        <div class="bpan" id="${pid}">
+          <div class="bgrid">
+            <div class="bcard"><div class="bcl">Entry zone</div><div class="bcv acc">${fmtP(b.ep)}</div><div class="bcs">~${((1-b.ep/coin.current_price)*100).toFixed(1)}% below current</div></div>
+            <div class="bcard"><div class="bcl">Stop loss</div><div class="bcv red">${fmtP(b.sp)}</div><div class="bcs">+${b.spct}% above current</div></div>
+            <div class="bcard"><div class="bcl">Fade target</div><div class="bcv green">${fmtP(b.tp)}</div><div class="bcs">${b.tpct}% from entry · ${Math.round(b.rp*100)}% retracement</div></div>
+            <div class="bcard"><div class="bcl">Risk</div><div class="bcv ${b.rc}">${b.rl}</div><div class="bcs">${b.rr}</div></div>
+          </div>
+          <div class="bins">
+            <div class="binsl">▸ How to play this trade</div>
+            <div class="bstp"><div class="bstn">1.</div><div class="bstt">Wait for <span>${b.et}</span>. Do not short into a still-rising move.</div></div>
+            <div class="bstp"><div class="bstn">2.</div><div class="bstt">Enter short near <span>${fmtP(b.ep)}</span>. ${b.pn}</div></div>
+            <div class="bstp"><div class="bstn">3.</div><div class="bstt">Stop above <span>${fmtP(b.sp)}</span> — a new high invalidates the thesis.</div></div>
+            <div class="bstp"><div class="bstn">4.</div><div class="bstt">Target <span>${fmtP(b.tp)}</span>. All trades auto-close at 16:00 local time.</div></div>
+            <div class="bstp"><div class="bstn">5.</div><div class="bstt">${b.sn}.</div></div>
+          </div>
+          <div class="bwarn"><strong>Risk disclaimer:</strong> Directional bias from price/volume data only. Does not account for news, listings, or market conditions. Short selling carries unlimited loss potential.</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    updateBadge();
+
+  } catch(e) {
+    err.textContent='⚠ '+(e.message||'Fetch failed — CoinGecko free tier: 30 req/min. Wait and retry.');
+    err.style.display='block';
+    document.getElementById('tableBody').innerHTML='<div class="stmsg"><div class="big">✕</div>Scan failed</div>';
+  } finally {
+    btn.classList.remove('loading'); pl.classList.add('idle'); lb.textContent='RUN SCAN';
+  }
+}
+
+updateBadge();
+</script>
+</body>
+</html>
