@@ -199,7 +199,7 @@
   <div class="header">
     <div>
       <div class="brand-title">FADE</div>
-      <div class="brand-sub">Parabolic Short Scanner &nbsp;·&nbsp; 8×+ vol · 7am–12pm AEST · Blacklist: AXS</div>
+      <div class="brand-sub">Parabolic Short Scanner &nbsp;·&nbsp; Crypto &nbsp;·&nbsp; Binance</div>
     </div>
     <div style="text-align:right">
       <div class="timestamp" id="ts">—</div>
@@ -216,11 +216,34 @@
   <div class="tab-content active" id="tab-scanner">
     <div class="controls-bar">
       <div class="controls">
-        <div class="cg"><span class="cl">Min 24h gain</span><input type="number" class="ci" id="minGain" value="30" min="10"><span class="cu">%</span></div>
+        <div class="cg"><span class="cl">Min 24h gain</span><input type="number" class="ci" id="minGain" value="30" min="5" max="500"><span class="cu">%</span></div>
         <div class="vd"></div>
         <div class="cg"><span class="cl">Vol spike</span><input type="number" class="ci" id="minVol" value="800" min="50"><span class="cu">%</span></div>
         <div class="vd"></div>
+        <div class="cg"><span class="cl">Min score</span><input type="number" class="ci" id="minScore" value="0" min="0" max="100"></div>
+        <div class="vd"></div>
+        <div class="cg"><span class="cl">Coins</span><input type="number" class="ci" id="scanCoins" value="150" min="10" max="300"></div>
+        <div class="vd"></div>
+        <div class="cg"><span class="cl">Skip top</span><input type="number" class="ci" id="skipTop" value="50" min="0" max="200"><span class="cu">by vol</span></div>
+      </div>
+      <div class="controls" style="margin-top:0;flex:none;">
         <div class="cg"><span class="cl">Stop buffer</span><input type="number" class="ci" id="stopBuf" value="10" min="1" max="30"><span class="cu">%</span></div>
+        <div class="vd"></div>
+        <div class="cg"><span class="cl">Target retrace</span><input type="number" class="ci" id="targetRetrace" value="35" min="10" max="70" step="5"><span class="cu">%</span></div>
+        <div class="vd"></div>
+        <div class="cg">
+          <span class="cl">Max signal hour</span>
+          <select class="ci" id="maxSigHour" style="width:auto;padding:4px 8px;cursor:pointer;">
+            <option value="16">All day (4pm)</option>
+            <option value="10">Before 10am</option>
+            <option value="11">Before 11am</option>
+            <option value="12" selected>Before 12pm</option>
+            <option value="13">Before 1pm</option>
+            <option value="14">Before 2pm</option>
+          </select>
+        </div>
+        <div class="vd"></div>
+        <div class="cg"><span class="cl">Blacklist</span><input type="text" class="ci" id="blacklist" value="AXS" placeholder="e.g. AXS,SIGN" style="width:110px;font-size:11px;"></div>
         <div class="vd"></div>
         <div class="cg"><span class="cl">Show top</span><input type="number" class="ci" id="topN" value="10" min="3" max="30"></div>
       </div>
@@ -345,7 +368,7 @@ function brief(coin) {
   const spct = stopBufPct.toFixed(1);
 
   // Target: 35% retracement of the 24h move (backtest-proven)
-  const rp = 0.35;
+  const rp = (parseFloat(document.getElementById('targetRetrace')?.value) || 35) / 100;
   const open = p/(1+g/100);
   const tp = ep-(ep-open)*rp;
   const tpct = ((ep-tp)/ep*100).toFixed(1);
@@ -584,20 +607,21 @@ async function runScan() {
   const btn=document.getElementById('scanBtn'), pl=document.getElementById('pulseEl'), lb=document.getElementById('btnLabel'), err=document.getElementById('errorMsg');
   btn.classList.add('loading'); pl.classList.remove('idle'); lb.textContent='SCANNING...'; err.style.display='none'; shimmer();
 
-  const minG  = parseFloat(document.getElementById('minGain').value) || 30;
-  const topN  = parseInt(document.getElementById('topN').value)       || 10;
-  const minV  = (parseFloat(document.getElementById('minVol').value)  || 800) / 100;
-
-  // Backtest-proven constants
-  const BLACKLIST   = new Set(['AXS']);
-  const SKIP_TOP    = 50;   // skip top 50 mega-caps
-  const SCAN_COINS  = 150;  // scan next 150 by volume (ranks 51-200)
-  const MAX_SIG_HOUR_AEST = 12  // signals detected up to 12pm; // only signals before 12pm AEST
+  const minG          = parseFloat(document.getElementById('minGain').value)      || 30;
+  const topN          = parseInt(document.getElementById('topN').value)            || 10;
+  const minV          = (parseFloat(document.getElementById('minVol').value)       || 800) / 100;
+  const minSc         = parseInt(document.getElementById('minScore').value)        || 0;
+  const SCAN_COINS    = parseInt(document.getElementById('scanCoins').value)       || 150;
+  const SKIP_TOP      = parseInt(document.getElementById('skipTop').value)         || 50;
+  const MAX_SIG_HOUR_AEST = parseInt(document.getElementById('maxSigHour').value) || 12;
+  const blRaw         = document.getElementById('blacklist').value;
+  const BLACKLIST     = new Set(blRaw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean));
 
   // Check time — warn if outside scan window
   const nowAEST = new Date(Date.now() + 10*3600000);
   const aestHour = nowAEST.getUTCHours();
   const inWindow = aestHour >= 7 && aestHour < MAX_SIG_HOUR_AEST;
+  const maxHourLabel = MAX_SIG_HOUR_AEST <= 12 ? MAX_SIG_HOUR_AEST + 'pm' : (MAX_SIG_HOUR_AEST-12)+'pm';
 
   try {
     const pages=await Promise.all([1,2,3].map(p=>
@@ -611,7 +635,7 @@ async function runScan() {
 
     // Show scan window warning in timestamp
     if (!inWindow) {
-      document.getElementById('ts').textContent = `⚠ Outside scan window — best signals are 7am–12pm AEST (now ${aestHour}:00 AEST)`;
+      document.getElementById('ts').textContent = `⚠ Outside scan window — best signals 7am–${maxHourLabel} AEST (now ${aestHour}:00 AEST)`;
       document.getElementById('ts').style.color = 'var(--amber)';
     } else {
       document.getElementById('ts').style.color = '';
@@ -635,7 +659,7 @@ async function runScan() {
       return;
     }
 
-    const scored=scoreCoins(vfilt);
+    const scored=scoreCoins(vfilt).filter(c=>c.score>=minSc);
     const top=scored.slice(0,topN);
     document.getElementById('statExtreme').textContent=top.filter(c=>c.score>=75||c.price_change_percentage_24h>=100).length;
     document.getElementById('statAvgGain').textContent='+'+(top.reduce((s,c)=>s+c.price_change_percentage_24h,0)/top.length).toFixed(1)+'%';
