@@ -581,7 +581,7 @@ async function runScan() {
       fetch(`${CG}/coins/markets?vs_currency=usd&order=volume_desc&per_page=100&page=${p}&price_change_percentage=24h`)
         .then(r=>{if(!r.ok) throw new Error(`API ${r.status}`); return r.json();})
     ));
-    const all=pages.flat();
+    const all=pages.flat().slice(50); // skip top 50 mega-caps by volume
     document.getElementById('statScanned').textContent=all.length;
 
     const med=(()=>{
