@@ -199,7 +199,7 @@
   <div class="header">
     <div>
       <div class="brand-title">FADE</div>
-      <div class="brand-sub">Parabolic Short Scanner &nbsp;·&nbsp; Crypto &nbsp;·&nbsp; Binance</div>
+      <div class="brand-sub">Parabolic Short Scanner &nbsp;·&nbsp; Crypto &nbsp;·&nbsp; CoinGecko</div>
     </div>
     <div style="text-align:right">
       <div class="timestamp" id="ts">—</div>
@@ -232,14 +232,27 @@
         <div class="cg"><span class="cl">Target retrace</span><input type="number" class="ci" id="targetRetrace" value="35" min="10" max="70" step="5"><span class="cu">%</span></div>
         <div class="vd"></div>
         <div class="cg">
-          <span class="cl">Max signal hour</span>
+          <span class="cl">Scan from</span>
+          <select class="ci" id="scanFrom" style="width:auto;padding:4px 8px;cursor:pointer;">
+            <option value="5">5am</option>
+            <option value="6">6am</option>
+            <option value="7" selected>7am</option>
+            <option value="8">8am</option>
+            <option value="9">9am</option>
+            <option value="10">10am</option>
+          </select>
+        </div>
+        <div class="vd"></div>
+        <div class="cg">
+          <span class="cl">Scan to</span>
           <select class="ci" id="maxSigHour" style="width:auto;padding:4px 8px;cursor:pointer;">
-            <option value="16">All day (4pm)</option>
-            <option value="10">Before 10am</option>
-            <option value="11">Before 11am</option>
-            <option value="12" selected>Before 12pm</option>
-            <option value="13">Before 1pm</option>
-            <option value="14">Before 2pm</option>
+            <option value="10">10am</option>
+            <option value="11">11am</option>
+            <option value="12" selected>12pm</option>
+            <option value="13">1pm</option>
+            <option value="14">2pm</option>
+            <option value="15">3pm</option>
+            <option value="16">4pm</option>
           </select>
         </div>
         <div class="vd"></div>
@@ -620,7 +633,8 @@ async function runScan() {
   // Check time — warn if outside scan window
   const nowAEST = new Date(Date.now() + 10*3600000);
   const aestHour = nowAEST.getUTCHours();
-  const inWindow = aestHour >= 7 && aestHour < MAX_SIG_HOUR_AEST;
+  const scanFrom = parseInt(document.getElementById('scanFrom').value) || 7;
+  const inWindow = aestHour >= scanFrom && aestHour < MAX_SIG_HOUR_AEST;
   const maxHourLabel = MAX_SIG_HOUR_AEST <= 12 ? MAX_SIG_HOUR_AEST + 'pm' : (MAX_SIG_HOUR_AEST-12)+'pm';
 
   try {
@@ -635,7 +649,7 @@ async function runScan() {
 
     // Show scan window warning in timestamp
     if (!inWindow) {
-      document.getElementById('ts').textContent = `⚠ Outside scan window — best signals 7am–${maxHourLabel} AEST (now ${aestHour}:00 AEST)`;
+      document.getElementById('ts').textContent = `⚠ Outside scan window — best signals ${scanFrom}am–${maxHourLabel} AEST (now ${aestHour}:00 AEST)`;
       document.getElementById('ts').style.color = 'var(--amber)';
     } else {
       document.getElementById('ts').style.color = '';
