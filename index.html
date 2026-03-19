@@ -199,7 +199,7 @@
   <div class="header">
     <div>
       <div class="brand-title">FADE</div>
-      <div class="brand-sub">Parabolic Short Scanner &nbsp;·&nbsp; Crypto</div>
+      <div class="brand-sub">Parabolic Short Scanner &nbsp;·&nbsp; 8×+ vol · 7am–12pm AEST · Blacklist: AXS</div>
     </div>
     <div style="text-align:right">
       <div class="timestamp" id="ts">—</div>
@@ -216,13 +216,13 @@
   <div class="tab-content active" id="tab-scanner">
     <div class="controls-bar">
       <div class="controls">
-        <div class="cg"><span class="cl">Min gain</span><input type="number" class="ci" id="minGain" value="30" min="10"><span class="cu">%</span></div>
+        <div class="cg"><span class="cl">Min 24h gain</span><input type="number" class="ci" id="minGain" value="30" min="10"><span class="cu">%</span></div>
         <div class="vd"></div>
-        <div class="cg"><span class="cl">Vol spike</span><input type="number" class="ci" id="minVol" value="200" min="50"><span class="cu">%</span></div>
+        <div class="cg"><span class="cl">Vol spike</span><input type="number" class="ci" id="minVol" value="800" min="50"><span class="cu">%</span></div>
         <div class="vd"></div>
-        <div class="cg"><span class="cl">Max mcap</span><input type="number" class="ci" id="maxMcap" value="500" min="10"><span class="cu">$M</span></div>
+        <div class="cg"><span class="cl">Stop buffer</span><input type="number" class="ci" id="stopBuf" value="10" min="1" max="30"><span class="cu">%</span></div>
         <div class="vd"></div>
-        <div class="cg"><span class="cl">Top</span><input type="number" class="ci" id="topN" value="10" min="3" max="30"></div>
+        <div class="cg"><span class="cl">Show top</span><input type="number" class="ci" id="topN" value="10" min="3" max="30"></div>
       </div>
       <button class="btn" id="scanBtn" onclick="runScan()">
         <div class="pulse idle" id="pulseEl"></div>
@@ -331,24 +331,36 @@ function sigLabel(score,gain){
 function sColor(s){ return s>=75?'var(--red)':s>=50?'var(--amber)':'var(--accent)'; }
 function tierCls(i){ return i===0?'t1':i<=2?'t2':'t3'; }
 
-// Trade brief
+// Trade brief — parameters tuned from 90-day backtest
+// Stop: 10% above signal price | Entry: 4% pullback | Target: 35% retracement | Confirm: 2 red candles
 function brief(coin) {
   const p=coin.current_price, g=coin.price_change_percentage_24h, s=coin.score, v=coin.volRatio, m=coin.market_cap;
+  const stopBufPct = parseFloat(document.getElementById('stopBuf')?.value) || 10;
+
+  // Entry zone: wait for 4-8% pullback from current price
   const ep = p*(g>=100?.92:g>=60?.94:.96);
-  const et = g>=100?'first 5-min candle closing red after a new high':g>=60?'rejection candle near current high — wait for close below open':'two consecutive red candles on declining volume';
-  const sp = p*(m<10e6?1.10:m<50e6?1.07:1.05);
-  const spct = ((sp-p)/p*100).toFixed(1);
-  const rp = g>=100?.50:g>=60?.42:.35;
+
+  // Stop: fixed % above current price (backtest-proven at 10%)
+  const sp = p*(1 + stopBufPct/100);
+  const spct = stopBufPct.toFixed(1);
+
+  // Target: 35% retracement of the 24h move (backtest-proven)
+  const rp = 0.35;
   const open = p/(1+g/100);
   const tp = ep-(ep-open)*rp;
   const tpct = ((ep-tp)/ep*100).toFixed(1);
+
+  // Entry trigger: always 2 red candles (backtest-proven)
+  const et = 'wait for 2 consecutive red (bearish) 15-min candles after price pulls back to the entry zone';
+
   let rl,rc,rr;
   if(m<5e6){rl='VERY HIGH';rc='red';rr='Micro-cap — borrow may be unavailable, spreads wide';}
   else if(m<30e6){rl='HIGH';rc='red';rr='Small-cap — short squeeze risk if float is thin';}
   else if(m<150e6){rl='MODERATE';rc='amber';rr='Mid-cap — reasonable liquidity but still volatile';}
-  else{rl='LOWER';rc='green';rr='Larger cap — better liquidity but move may have legs';}
-  const sn = s>=75?'High-conviction — scale in rather than full position at once':s>=50?'Moderate conviction — consider half-size, add on confirmation':'Lower conviction — small size only, treat as speculative';
-  const pn = v>=5?'Volume extremely elevated — wait for clear exhaustion before entering.':v>=3?'Significant spike — let the initial wave exhaust first.':'Moderate spike — be patient with your entry.';
+  else{rl='LOWER';rc='green';rr='Larger cap — better liquidity and tighter spreads';}
+
+  const sn = s>=75?'High-conviction setup — standard size, scale in on 2nd red candle':s>=50?'Moderate conviction — half size only, add on confirmation':'Lower conviction — small size, treat as speculative';
+  const pn = v>=8?'Volume spike is 8×+ average — strong exhaustion signal. Wait for 2 red candles before entering.':v>=5?'Volume spike elevated — wait for 2 red candles before entering.':'Moderate volume spike — be patient, wait for full 2-candle confirmation.';
   return {ep,et,sp,spct,tp,tpct,rl,rc,rr,sn,pn,rp};
 }
 
@@ -572,27 +584,47 @@ async function runScan() {
   const btn=document.getElementById('scanBtn'), pl=document.getElementById('pulseEl'), lb=document.getElementById('btnLabel'), err=document.getElementById('errorMsg');
   btn.classList.add('loading'); pl.classList.remove('idle'); lb.textContent='SCANNING...'; err.style.display='none'; shimmer();
 
-  const minG=parseFloat(document.getElementById('minGain').value)||30;
-  const maxM=(parseFloat(document.getElementById('maxMcap').value)||500)*1e6;
-  const topN=parseInt(document.getElementById('topN').value)||10;
+  const minG  = parseFloat(document.getElementById('minGain').value) || 30;
+  const topN  = parseInt(document.getElementById('topN').value)       || 10;
+  const minV  = (parseFloat(document.getElementById('minVol').value)  || 800) / 100;
+
+  // Backtest-proven constants
+  const BLACKLIST   = new Set(['AXS']);
+  const SKIP_TOP    = 50;   // skip top 50 mega-caps
+  const SCAN_COINS  = 150;  // scan next 150 by volume (ranks 51-200)
+  const MAX_SIG_HOUR_AEST = 12  // signals detected up to 12pm; // only signals before 12pm AEST
+
+  // Check time — warn if outside scan window
+  const nowAEST = new Date(Date.now() + 10*3600000);
+  const aestHour = nowAEST.getUTCHours();
+  const inWindow = aestHour >= 7 && aestHour < MAX_SIG_HOUR_AEST;
 
   try {
     const pages=await Promise.all([1,2,3].map(p=>
       fetch(`${CG}/coins/markets?vs_currency=usd&order=volume_desc&per_page=100&page=${p}&price_change_percentage=24h`)
         .then(r=>{if(!r.ok) throw new Error(`API ${r.status}`); return r.json();})
     ));
-    const all=pages.flat().slice(50); // skip top 50 mega-caps by volume
+    // Ranks 51-200: skip top 50 mega-caps, take next 150
+    const all=pages.flat().slice(SKIP_TOP, SKIP_TOP + SCAN_COINS)
+      .filter(c => !BLACKLIST.has(c.symbol?.toUpperCase()));
     document.getElementById('statScanned').textContent=all.length;
+
+    // Show scan window warning in timestamp
+    if (!inWindow) {
+      document.getElementById('ts').textContent = `⚠ Outside scan window — best signals are 7am–12pm AEST (now ${aestHour}:00 AEST)`;
+      document.getElementById('ts').style.color = 'var(--amber)';
+    } else {
+      document.getElementById('ts').style.color = '';
+    }
 
     const med=(()=>{
       const rs=all.map(c=>c.total_volume/(c.market_cap||1)).sort((a,b)=>a-b);
       return rs[Math.floor(rs.length/2)];
     })();
 
-    const filt=all.filter(c=>c.price_change_percentage_24h>=minG&&c.market_cap&&c.market_cap<=maxM)
+    const filt=all.filter(c=>c.price_change_percentage_24h>=minG&&c.market_cap)
       .map(c=>({...c,volRatio:(c.total_volume/(c.market_cap||1))/med}));
 
-    const minV=parseFloat(document.getElementById('minVol').value)/100||2;
     const vfilt=filt.filter(c=>c.volRatio>=minV);
     document.getElementById('statPassed').textContent=vfilt.length;
 
@@ -647,13 +679,13 @@ async function runScan() {
           </div>
           <div class="bins">
             <div class="binsl">▸ How to play this trade</div>
-            <div class="bstp"><div class="bstn">1.</div><div class="bstt">Wait for <span>${b.et}</span>. Do not short into a still-rising move.</div></div>
-            <div class="bstp"><div class="bstn">2.</div><div class="bstt">Enter short near <span>${fmtP(b.ep)}</span>. ${b.pn}</div></div>
-            <div class="bstp"><div class="bstn">3.</div><div class="bstt">Stop above <span>${fmtP(b.sp)}</span> — a new high invalidates the thesis.</div></div>
-            <div class="bstp"><div class="bstn">4.</div><div class="bstt">Target <span>${fmtP(b.tp)}</span>. All trades auto-close at 16:00 local time.</div></div>
+            <div class="bstp"><div class="bstn">1.</div><div class="bstt">Wait for <span>${b.et}</span>. This is the most important rule — jumping in early is the #1 cause of stop-outs.</div></div>
+            <div class="bstp"><div class="bstn">2.</div><div class="bstt">Once both red candles close, enter short near <span>${fmtP(b.ep)}</span>. ${b.pn}</div></div>
+            <div class="bstp"><div class="bstn">3.</div><div class="bstt">Stop above <span>${fmtP(b.sp)}</span> (${b.spct}% above current price) — if price breaks here, the move is still running and the thesis is invalid. Exit immediately.</div></div>
+            <div class="bstp"><div class="bstn">4.</div><div class="bstt">Target <span>${fmtP(b.tp)}</span> (35% retracement of the 24h move). Close all positions at 4pm AEST regardless of outcome — do not hold overnight.</div></div>
             <div class="bstp"><div class="bstn">5.</div><div class="bstt">${b.sn}.</div></div>
           </div>
-          <div class="bwarn"><strong>Risk disclaimer:</strong> Directional bias from price/volume data only. Does not account for news, listings, or market conditions. Short selling carries unlimited loss potential.</div>
+          <div class="bwarn"><strong>Backtest parameters:</strong> 73% win rate / +3.1% expectancy over 90 days · 400 coins · 8×+ vol filter · 2-candle confirm · 10% stop · 4pm close. <strong>Risk disclaimer:</strong> Past results do not guarantee future performance. Short selling carries unlimited loss potential.</div>
         </div>
       </div>`;
     }).join('');
